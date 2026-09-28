@@ -195,10 +195,24 @@ def save_reading(data):
 def serialize_row(row):
     if row is None:
         return None
+
     d = dict(row)
+
+    # PostgreSQL lowercases unquoted column names.
+    # Convert them back to the API names expected by the dashboard.
+    if "upstream_current_a" in d:
+        d["upstream_current_A"] = d.pop("upstream_current_a")
+
+    if "main_current_a" in d:
+        d["main_current_A"] = d.pop("main_current_a")
+
+    if "difference_a" in d:
+        d["difference_A"] = d.pop("difference_a")
+
     ts = d.get("timestamp_utc")
     if hasattr(ts, "isoformat"):
         d["timestamp_utc"] = ts.isoformat()
+
     return d
 
 def latest_row():
