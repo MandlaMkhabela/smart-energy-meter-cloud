@@ -1,6 +1,4 @@
-from pathlib import Path
-
-app_code = r'''import encodings.idna
+import encodings.idna
 import os
 import json
 import sqlite3
@@ -651,8 +649,3 @@ threading.Thread(target=mqtt_loop,daemon=True,name="mqtt-subscriber").start()
 if __name__=="__main__":
     port=int(os.getenv("PORT","5000"))
     app.run(host="0.0.0.0",port=port,debug=False)
-'''
-
-path = Path("/mnt/data/app_cool.py")
-path.write_text(app_code, encoding="utf-8")
-print(f"Created {path}")
