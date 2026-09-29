@@ -36,24 +36,24 @@ HTML = r"""
 
 <style>
 :root{
-  --bg:#07111f;
-  --panel:#0d1b2a;
-  --panel2:#102235;
-  --line:#23364d;
-  --text:#f6f9fc;
-  --muted:#91a4b7;
-  --cyan:#34d6ff;
-  --blue:#4d8cff;
-  --green:#2ce38f;
-  --yellow:#ffc857;
-  --red:#ff5d73;
+  --bg:#101214;
+  --panel:#191c1f;
+  --panel2:#202428;
+  --line:#343a40;
+  --text:#f3f4f6;
+  --muted:#9da3aa;
+  --cyan:#4cc9b0;
+  --blue:#e9ecef;
+  --green:#38d996;
+  --yellow:#f6b94a;
+  --red:#ff6677;
   --shadow:0 18px 55px rgba(0,0,0,.28);
 }
 
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%;font-family:Inter,Segoe UI,Arial,sans-serif;background:
-radial-gradient(circle at 15% 0%,rgba(52,214,255,.12),transparent 30%),
-radial-gradient(circle at 85% 15%,rgba(77,140,255,.10),transparent 28%),
+radial-gradient(circle at 15% 0%,rgba(76,201,176,.08),transparent 30%),
+radial-gradient(circle at 85% 15%,rgba(246,185,74,.06),transparent 28%),
 var(--bg);color:var(--text)}
 
 body:before{
@@ -74,27 +74,27 @@ body:before{
 .logo{
   width:48px;height:48px;border-radius:14px;
   display:grid;place-items:center;font-weight:900;font-size:19px;
-  background:linear-gradient(145deg,var(--cyan),var(--blue));
-  color:#04101a;box-shadow:0 0 30px rgba(52,214,255,.25)
+  background:linear-gradient(145deg,#e7e5df,#b7bcc2);
+  color:#111315;box-shadow:0 0 24px rgba(255,255,255,.10)
 }
 .brand h1{font-size:22px;margin:0;letter-spacing:.2px}
 .brand p{margin:4px 0 0;color:var(--muted);font-size:13px}
 
 .live-pill{
   display:flex;align-items:center;gap:9px;padding:9px 13px;border:1px solid var(--line);
-  background:rgba(13,27,42,.78);border-radius:999px;color:#cfe5f6;font-size:13px
+  background:rgba(28,31,34,.92);border-radius:999px;color:#d7dadd;font-size:13px
 }
 .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 14px var(--green);animation:pulse 1.4s infinite}
 @keyframes pulse{50%{transform:scale(.72);opacity:.55}}
 
 .status-hero{
   position:relative;overflow:hidden;border:1px solid var(--line);
-  background:linear-gradient(135deg,rgba(16,34,53,.96),rgba(11,26,41,.92));
+  background:linear-gradient(135deg,rgba(31,34,37,.98),rgba(20,22,24,.96));
   border-radius:22px;padding:22px;box-shadow:var(--shadow);margin-bottom:16px;
 }
 .status-hero:after{
   content:"";position:absolute;width:230px;height:230px;border-radius:50%;
-  right:-85px;top:-115px;background:rgba(52,214,255,.09);filter:blur(2px)
+  right:-85px;top:-115px;background:rgba(246,185,74,.07);filter:blur(2px)
 }
 .hero-row{display:flex;justify-content:space-between;align-items:center;gap:18px;position:relative;z-index:1}
 .eyebrow{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);font-weight:700}
@@ -109,12 +109,12 @@ body:before{
 
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
 .metric{
-  background:linear-gradient(160deg,rgba(16,34,53,.94),rgba(10,25,39,.94));
+  background:linear-gradient(160deg,rgba(31,34,37,.97),rgba(22,24,26,.97));
   border:1px solid var(--line);border-radius:18px;padding:17px;box-shadow:var(--shadow);
   position:relative;overflow:hidden
 }
 .metric:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cyan)}
-.metric:nth-child(2):before{background:var(--blue)}
+.metric:nth-child(2):before{background:#e9ecef}
 .metric:nth-child(3):before{background:var(--yellow)}
 .metric:nth-child(4):before{background:var(--green)}
 .metric-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px}
@@ -124,7 +124,7 @@ body:before{
 
 .two-col{display:grid;grid-template-columns:1.6fr .9fr;gap:14px;margin-bottom:14px}
 .card{
-  background:linear-gradient(160deg,rgba(16,34,53,.94),rgba(10,25,39,.94));
+  background:linear-gradient(160deg,rgba(31,34,37,.97),rgba(22,24,26,.97));
   border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow)
 }
 .card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
@@ -145,14 +145,14 @@ svg{width:100%;height:100%;overflow:visible}
 .kpi-name{color:var(--muted);font-size:12px}
 .kpi-val{font-size:22px;font-weight:850;margin-top:5px}
 .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
-.chip{font-size:11px;padding:6px 9px;border-radius:999px;background:#132a40;border:1px solid #28445f;color:#cde5f6}
+.chip{font-size:11px;padding:6px 9px;border-radius:999px;background:#24282c;border:1px solid #3a4046;color:#d6d9dc}
 
 .table-card{padding:0;overflow:hidden}
 .table-head{padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
 .table-wrap{overflow:auto;max-height:430px}
 table{width:100%;border-collapse:collapse;min-width:720px}
 th,td{padding:12px 16px;border-bottom:1px solid rgba(35,54,77,.72);text-align:left;font-size:13px}
-th{position:sticky;top:0;background:#0e1d2d;color:#a7b8c8;font-size:11px;text-transform:uppercase;letter-spacing:.8px;z-index:2}
+th{position:sticky;top:0;background:#202326;color:#b4b8bd;font-size:11px;text-transform:uppercase;letter-spacing:.8px;z-index:2}
 tr:hover td{background:rgba(255,255,255,.02)}
 .badge{display:inline-block;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800}
 .badge-normal{color:#aef6d2;background:rgba(44,227,143,.10);border:1px solid rgba(44,227,143,.22)}
@@ -243,9 +243,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div class="card-sub">Most recent meter readings</div>
         </div>
         <div class="legend">
-          <span><i class="swatch" style="background:#34d6ff"></i>Upstream</span>
-          <span><i class="swatch" style="background:#4d8cff"></i>Main</span>
-          <span><i class="swatch" style="background:#ffc857"></i>Difference</span>
+          <span><i class="swatch" style="background:#4cc9b0"></i>Upstream</span>
+          <span><i class="swatch" style="background:#e9ecef"></i>Main</span>
+          <span><i class="swatch" style="background:#f6b94a"></i>Difference</span>
         </div>
       </div>
       <div class="chart-wrap">
@@ -372,8 +372,8 @@ function drawChart(rows){
     const yy=padT+i*(H-padT-padB)/4;
     const value=max-i*(max-min)/4;
     svg.insertAdjacentHTML("beforeend",
-      `<line x1="${padL}" x2="${W-padR}" y1="${yy}" y2="${yy}" stroke="#22354a" stroke-width="1"/>
-       <text x="${padL-8}" y="${yy+4}" text-anchor="end" fill="#71869a" font-size="11">${value.toFixed(1)}</text>`);
+      `<line x1="${padL}" x2="${W-padR}" y1="${yy}" y2="${yy}" stroke="#34383d" stroke-width="1"/>
+       <text x="${padL-8}" y="${yy+4}" text-anchor="end" fill="#8e949a" font-size="11">${value.toFixed(1)}</text>`);
   }
 
   function path(vals,color){
@@ -382,15 +382,15 @@ function drawChart(rows){
       `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`);
   }
 
-  path(us,"#34d6ff");
-  path(ms,"#4d8cff");
-  path(ds,"#ffc857");
+  path(us,"#4cc9b0");
+  path(ms,"#e9ecef");
+  path(ds,"#f6b94a");
 
   const first = localTime(data[0].timestamp_utc);
   const last = localTime(data[data.length-1].timestamp_utc);
   svg.insertAdjacentHTML("beforeend",
-    `<text x="${padL}" y="${H-6}" fill="#71869a" font-size="11">${first}</text>
-     <text x="${W-padR}" y="${H-6}" text-anchor="end" fill="#71869a" font-size="11">${last}</text>`);
+    `<text x="${padL}" y="${H-6}" fill="#8e949a" font-size="11">${first}</text>
+     <text x="${W-padR}" y="${H-6}" text-anchor="end" fill="#8e949a" font-size="11">${last}</text>`);
 }
 
 function updateAge(){
