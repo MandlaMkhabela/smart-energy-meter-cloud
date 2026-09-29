@@ -64,6 +64,26 @@ body:before{
   background-size:36px 36px;
 }
 
+body.normal-state{
+  background:
+  radial-gradient(circle at 15% 0%,rgba(56,217,150,.08),transparent 30%),
+  radial-gradient(circle at 85% 15%,rgba(76,201,176,.05),transparent 28%),
+  var(--bg);
+}
+
+body.alarm-state{
+  background:
+  radial-gradient(circle at 18% 0%,rgba(255,102,119,.16),transparent 32%),
+  radial-gradient(circle at 85% 10%,rgba(255,102,119,.10),transparent 28%),
+  linear-gradient(180deg,#1a1014 0%, #101214 100%);
+  animation:alarmBgPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes alarmBgPulse{
+  0%,100%{box-shadow:inset 0 0 0 0 rgba(255,102,119,0)}
+  50%{box-shadow:inset 0 0 180px 0 rgba(255,102,119,.05)}
+}
+
 .shell{max-width:1240px;margin:auto;padding:22px}
 
 .topbar{
@@ -99,13 +119,30 @@ body:before{
 .hero-row{display:flex;justify-content:space-between;align-items:center;gap:18px;position:relative;z-index:1}
 .eyebrow{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .hero-status{font-size:34px;font-weight:900;margin-top:7px;letter-spacing:.3px}
+.hero-status.normal-text{color:#88f0b8}
+.hero-status.alarm-text{color:#ff7d8c;text-shadow:0 0 24px rgba(255,102,119,.22)}
 .hero-sub{color:var(--muted);margin-top:7px;font-size:14px}
 .status-badge{
   padding:13px 17px;border-radius:14px;font-weight:800;min-width:168px;text-align:center;
   border:1px solid rgba(255,255,255,.08)
 }
-.status-normal{color:#baffdd;background:rgba(44,227,143,.10);box-shadow:inset 0 0 22px rgba(44,227,143,.04)}
-.status-alarm{color:#ffd9df;background:rgba(255,93,115,.13);box-shadow:0 0 30px rgba(255,93,115,.10)}
+.status-normal{
+  color:#d8ffe9;
+  background:rgba(56,217,150,.18);
+  border:1px solid rgba(56,217,150,.35);
+  box-shadow:0 0 28px rgba(56,217,150,.10), inset 0 0 22px rgba(56,217,150,.04)
+}
+.status-alarm{
+  color:#ffe3e7;
+  background:rgba(255,93,115,.22);
+  border:1px solid rgba(255,93,115,.42);
+  box-shadow:0 0 38px rgba(255,93,115,.18), inset 0 0 24px rgba(255,93,115,.08);
+  animation:alarmBadgePulse 1s ease-in-out infinite;
+}
+@keyframes alarmBadgePulse{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.03)}
+}
 
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
 .metric{
@@ -184,7 +221,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </style>
 </head>
 
-<body>
+<body class="normal-state">
 <div class="shell">
 
   <div class="topbar">
@@ -201,7 +238,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
   </div>
 
-  <section class="status-hero">
+  <section class="status-hero" id="heroPanel">
     <div class="hero-row">
       <div>
         <div class="eyebrow">System condition</div>
@@ -336,12 +373,23 @@ function esc(s){
 
 function setStatus(status, difference){
   const alarm = status !== "NORMAL";
+  document.body.classList.toggle("alarm-state", alarm);
+  document.body.classList.toggle("normal-state", !alarm);
+
   heroStatus.textContent = alarm ? "POSSIBLE BYPASS DETECTED" : "SYSTEM NORMAL";
-  statusBadge.textContent = alarm ? "INVESTIGATE" : "NORMAL";
+  heroStatus.className = "hero-status " + (alarm ? "alarm-text" : "normal-text");
+
+  statusBadge.textContent = alarm ? "ALARM" : "NORMAL";
   statusBadge.className = "status-badge " + (alarm ? "status-alarm" : "status-normal");
 
+  const heroPanel = document.getElementById("heroPanel");
+  heroPanel.style.borderColor = alarm ? "rgba(255,93,115,.45)" : "rgba(56,217,150,.25)";
+  heroPanel.style.boxShadow = alarm
+    ? "0 0 0 1px rgba(255,93,115,.12), 0 18px 55px rgba(0,0,0,.28), 0 0 45px rgba(255,93,115,.14)"
+    : "0 0 0 1px rgba(56,217,150,.08), 0 18px 55px rgba(0,0,0,.28), 0 0 32px rgba(56,217,150,.08)";
+
   if(alarm){
-    heroSub.textContent = `Current mismatch of ${f(difference)} A has exceeded the prototype threshold.`;
+    heroSub.textContent = `Current mismatch of ${f(difference)} A has exceeded the prototype threshold. Immediate investigation is recommended.`;
   }else{
     heroSub.textContent = "Upstream and main-meter currents are within the expected range.";
   }
