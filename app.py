@@ -100,6 +100,17 @@ body.alarm-state{
 .brand h1{font-size:22px;margin:0;letter-spacing:.2px}
 .brand p{margin:4px 0 0;color:var(--muted);font-size:13px}
 
+.top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.view-switch{
+  display:flex;align-items:center;padding:3px;border:1px solid var(--line);
+  background:rgba(28,31,34,.92);border-radius:12px
+}
+.view-btn{
+  border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:800;
+  padding:7px 11px;border-radius:9px;cursor:pointer;transition:.18s ease
+}
+.view-btn:hover{color:var(--text)}
+.view-btn.active{background:#e9ecef;color:#121416;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 .live-pill{
   display:flex;align-items:center;gap:9px;padding:9px 13px;border:1px solid var(--line);
   background:rgba(28,31,34,.92);border-radius:999px;color:#d7dadd;font-size:13px
@@ -229,12 +240,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="logo">26</div>
       <div>
         <h1>26G55 Smart Energy Meter</h1>
-        <p>Wits Investigation Project · Cloud Remote Monitoring</p>
+        <p>Wits EIE Investigation Project · Cloud Remote Monitoring</p>
       </div>
     </div>
-    <div class="live-pill" id="connectionPill">
-      <span class="dot"></span>
-      <span id="liveText">LIVE</span>
+    <div class="top-actions">
+      <div class="view-switch" aria-label="Dashboard measurement view">
+        <button class="view-btn active" id="currentViewBtn" type="button">Current</button>
+        <button class="view-btn" id="powerViewBtn" type="button">Power</button>
+      </div>
+      <div class="live-pill" id="connectionPill">
+        <span class="dot"></span>
+        <span id="liveText">LIVE</span>
+      </div>
     </div>
   </div>
 
@@ -251,18 +268,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
   <section class="grid4">
     <div class="metric">
-      <div class="metric-label">Upstream current</div>
-      <div class="metric-value"><span id="u">--</span><span class="metric-unit">A</span></div>
+      <div class="metric-label" id="upstreamLabel">Upstream current</div>
+      <div class="metric-value"><span id="u">--</span><span class="metric-unit" id="upstreamUnit">A</span></div>
       <div class="metric-note">Reference-side measurement</div>
     </div>
     <div class="metric">
-      <div class="metric-label">Main meter current</div>
-      <div class="metric-value"><span id="m">--</span><span class="metric-unit">A</span></div>
+      <div class="metric-label" id="mainLabel">Main meter current</div>
+      <div class="metric-value"><span id="m">--</span><span class="metric-unit" id="mainUnit">A</span></div>
       <div class="metric-note">Customer meter measurement</div>
     </div>
     <div class="metric">
-      <div class="metric-label">Current difference</div>
-      <div class="metric-value"><span id="d">--</span><span class="metric-unit">A</span></div>
+      <div class="metric-label" id="differenceLabel">Current difference</div>
+      <div class="metric-value"><span id="d">--</span><span class="metric-unit" id="differenceUnit">A</span></div>
       <div class="metric-note" id="differenceNote">Mismatch unavailable</div>
     </div>
     <div class="metric">
@@ -276,7 +293,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="card">
       <div class="card-head">
         <div>
-          <div class="card-title">Live current trend</div>
+          <div class="card-title" id="trendTitle">Live current trend</div>
           <div class="card-sub">Most recent meter readings</div>
         </div>
         <div class="legend">
@@ -303,7 +320,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div class="kpi-val" id="bypassCount">0</div>
         </div>
         <div class="kpi">
-          <div class="kpi-top"><span class="kpi-name">Latest mismatch</span><span>ΔI</span></div>
+          <div class="kpi-top"><span class="kpi-name">Latest mismatch</span><span id="mismatchSymbol">ΔI</span></div>
           <div class="kpi-val"><span id="mismatchPct">--</span><span class="metric-unit">%</span></div>
         </div>
         <div class="kpi">
@@ -332,9 +349,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <thead>
           <tr>
             <th>Time</th>
-            <th>Upstream</th>
-            <th>Main</th>
-            <th>Difference</th>
+            <th id="histUpstreamHead">Upstream</th>
+            <th id="histMainHead">Main</th>
+            <th id="histDifferenceHead">Difference</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -353,15 +370,28 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <script>
 let lastReceivedAt = null;
 let latestHistory = [];
+let latestReading = null;
+let viewMode = "current";
 
 function num(v){
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
-function f(v){ return num(v).toFixed(3); }
+function finiteOrNull(v){
+  if(v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function fCurrent(v){ return num(v).toFixed(3); }
+function fPower(v){
+  const n=finiteOrNull(v);
+  return n === null ? "--" : n.toFixed(1);
+}
 function pctDiff(u,m){
-  const base = Math.max(Math.abs(u),0.001);
-  return Math.abs(u-m)/base*100;
+  const uu=finiteOrNull(u), mm=finiteOrNull(m);
+  if(uu === null || mm === null) return null;
+  const base = Math.max(Math.abs(uu),0.001);
+  return Math.abs(uu-mm)/base*100;
 }
 function localTime(ts){
   const d = new Date(ts);
@@ -371,7 +401,32 @@ function esc(s){
   return String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 }
 
-function setStatus(status, difference){
+function measurementFields(row){
+  if(viewMode === "power"){
+    return {
+      upstream: finiteOrNull(row?.upstream_power_W),
+      main: finiteOrNull(row?.main_power_W),
+      difference: finiteOrNull(row?.power_difference_W),
+      unit: "W",
+      decimals: 1
+    };
+  }
+  return {
+    upstream: finiteOrNull(row?.upstream_current_A),
+    main: finiteOrNull(row?.main_current_A),
+    difference: finiteOrNull(row?.difference_A),
+    unit: "A",
+    decimals: 3
+  };
+}
+
+function formatMeasurement(v){
+  const n=finiteOrNull(v);
+  if(n === null) return "--";
+  return viewMode === "power" ? n.toFixed(1) : n.toFixed(3);
+}
+
+function setStatus(status, currentDifference){
   const alarm = status !== "NORMAL";
   document.body.classList.toggle("alarm-state", alarm);
   document.body.classList.toggle("normal-state", !alarm);
@@ -388,8 +443,11 @@ function setStatus(status, difference){
     ? "0 0 0 1px rgba(255,93,115,.12), 0 18px 55px rgba(0,0,0,.28), 0 0 45px rgba(255,93,115,.14)"
     : "0 0 0 1px rgba(56,217,150,.08), 0 18px 55px rgba(0,0,0,.28), 0 0 32px rgba(56,217,150,.08)";
 
+  const diff=finiteOrNull(currentDifference);
   if(alarm){
-    heroSub.textContent = `Current mismatch of ${f(difference)} A has exceeded the prototype threshold. Immediate investigation is recommended.`;
+    heroSub.textContent = diff === null
+      ? "The MCU has reported a possible bypass condition. Immediate investigation is recommended."
+      : `Current mismatch of ${fCurrent(diff)} A has exceeded the prototype threshold. Immediate investigation is recommended.`;
   }else{
     heroSub.textContent = "Upstream and main-meter currents are within the expected range.";
   }
@@ -397,21 +455,37 @@ function setStatus(status, difference){
 
 function drawChart(rows){
   const svg = document.getElementById("chart");
-  const data = rows.slice(-30);
+  let data = rows.slice(-30);
   svg.innerHTML = "";
+
+  if(viewMode === "power"){
+    data = data.filter(x =>
+      finiteOrNull(x.upstream_power_W) !== null &&
+      finiteOrNull(x.main_power_W) !== null &&
+      finiteOrNull(x.power_difference_W) !== null
+    );
+  }
+
   if(data.length < 2){
-    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#91a4b7" font-size="14">Waiting for trend data…</text>';
+    const msg = viewMode === "power"
+      ? "Waiting for power data…"
+      : "Waiting for trend data…";
+    svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#91a4b7" font-size="14">${msg}</text>`;
     return;
   }
 
   const W=900,H=260,padL=46,padR=12,padT=14,padB=28;
-  const us=data.map(x=>num(x.upstream_current_A));
-  const ms=data.map(x=>num(x.main_current_A));
-  const ds=data.map(x=>num(x.difference_A));
-  const all=[...us,...ms,...ds];
+  const us=data.map(x=>measurementFields(x).upstream);
+  const ms=data.map(x=>measurementFields(x).main);
+  const ds=data.map(x=>measurementFields(x).difference);
+  const all=[...us,...ms,...ds].filter(v=>v!==null);
   let max=Math.max(...all,1);
   let min=Math.min(...all,0);
-  if(max-min < .2){max += .1; min -= .1;}
+  const minimumSpan = viewMode === "power" ? 20 : .2;
+  if(max-min < minimumSpan){
+    const bump = viewMode === "power" ? 10 : .1;
+    max += bump; min -= bump;
+  }
 
   const x=i=>padL+(i/(data.length-1))*(W-padL-padR);
   const y=v=>padT+(max-v)/(max-min)*(H-padT-padB);
@@ -419,9 +493,10 @@ function drawChart(rows){
   for(let i=0;i<5;i++){
     const yy=padT+i*(H-padT-padB)/4;
     const value=max-i*(max-min)/4;
+    const label=viewMode === "power" ? value.toFixed(0) : value.toFixed(1);
     svg.insertAdjacentHTML("beforeend",
       `<line x1="${padL}" x2="${W-padR}" y1="${yy}" y2="${yy}" stroke="#34383d" stroke-width="1"/>
-       <text x="${padL-8}" y="${yy+4}" text-anchor="end" fill="#8e949a" font-size="11">${value.toFixed(1)}</text>`);
+       <text x="${padL-8}" y="${yy+4}" text-anchor="end" fill="#8e949a" font-size="11">${label}</text>`);
   }
 
   function path(vals,color){
@@ -439,6 +514,72 @@ function drawChart(rows){
   svg.insertAdjacentHTML("beforeend",
     `<text x="${padL}" y="${H-6}" fill="#8e949a" font-size="11">${first}</text>
      <text x="${W-padR}" y="${H-6}" text-anchor="end" fill="#8e949a" font-size="11">${last}</text>`);
+}
+
+function updateViewLabels(){
+  const power = viewMode === "power";
+
+  currentViewBtn.classList.toggle("active", !power);
+  powerViewBtn.classList.toggle("active", power);
+
+  upstreamLabel.textContent = power ? "Upstream power" : "Upstream current";
+  mainLabel.textContent = power ? "Main meter power" : "Main meter current";
+  differenceLabel.textContent = power ? "Power difference" : "Current difference";
+  upstreamUnit.textContent = power ? "W" : "A";
+  mainUnit.textContent = power ? "W" : "A";
+  differenceUnit.textContent = power ? "W" : "A";
+  trendTitle.textContent = power ? "Live power trend" : "Live current trend";
+  mismatchSymbol.textContent = power ? "ΔP" : "ΔI";
+  histUpstreamHead.textContent = "Upstream";
+  histMainHead.textContent = "Main";
+  histDifferenceHead.textContent = "Difference";
+}
+
+function renderData(){
+  updateViewLabels();
+
+  if(latestReading && latestReading.status !== "NO_DATA"){
+    const vals=measurementFields(latestReading);
+    u.textContent=formatMeasurement(vals.upstream);
+    m.textContent=formatMeasurement(vals.main);
+    d.textContent=formatMeasurement(vals.difference);
+    t.textContent=localTime(latestReading.timestamp_utc);
+
+    const mismatch=pctDiff(vals.upstream,vals.main);
+    mismatchPct.textContent=mismatch === null ? "--" : mismatch.toFixed(1);
+    differenceNote.textContent=mismatch === null
+      ? (viewMode === "power" ? "Power data unavailable" : "Mismatch unavailable")
+      : `${mismatch.toFixed(1)}% of upstream reading`;
+
+    meterId.textContent=latestReading.meter_id || "--";
+    sourceText.textContent="Source: " + (latestReading.source || "mqtt");
+    setStatus(latestReading.status, latestReading.difference_A);
+    lastReceivedAt = new Date(latestReading.timestamp_utc).getTime();
+  }
+
+  const recent = latestHistory.slice(-20).reverse();
+  hist.innerHTML="";
+  let bypass=0;
+
+  latestHistory.forEach(x=>{ if(x.status !== "NORMAL") bypass++; });
+  bypassCount.textContent=bypass;
+  rowCount.textContent=`${recent.length} records`;
+
+  recent.forEach(x=>{
+    const alarm=x.status!=="NORMAL";
+    const vals=measurementFields(x);
+    const tr=document.createElement("tr");
+    if(alarm) tr.className="alarm-row";
+    tr.innerHTML=`
+      <td>${esc(localTime(x.timestamp_utc))}</td>
+      <td>${formatMeasurement(vals.upstream)} ${vals.unit}</td>
+      <td>${formatMeasurement(vals.main)} ${vals.unit}</td>
+      <td>${formatMeasurement(vals.difference)} ${vals.unit}</td>
+      <td><span class="badge ${alarm?"badge-alarm":"badge-normal"}">${esc(x.status)}</span></td>`;
+    hist.appendChild(tr);
+  });
+
+  drawChart(latestHistory);
 }
 
 function updateAge(){
@@ -468,50 +609,9 @@ async function refresh(){
 
     if(!lr.ok || !hr.ok) throw new Error("API error");
 
-    const latest = await lr.json();
-    const rows = await hr.json();
-    latestHistory = rows;
-
-    if(latest.status !== "NO_DATA"){
-      const uu=num(latest.upstream_current_A);
-      const mm=num(latest.main_current_A);
-      const dd=num(latest.difference_A);
-
-      u.textContent=f(uu);
-      m.textContent=f(mm);
-      d.textContent=f(dd);
-      t.textContent=localTime(latest.timestamp_utc);
-      mismatchPct.textContent=pctDiff(uu,mm).toFixed(1);
-      differenceNote.textContent=`${pctDiff(uu,mm).toFixed(1)}% of upstream reading`;
-      meterId.textContent=latest.meter_id || "--";
-      sourceText.textContent="Source: " + (latest.source || "mqtt");
-
-      setStatus(latest.status,dd);
-      lastReceivedAt = new Date(latest.timestamp_utc).getTime();
-    }
-
-    const recent = rows.slice(-20).reverse();
-    hist.innerHTML="";
-    let bypass=0;
-
-    rows.forEach(x=>{ if(x.status !== "NORMAL") bypass++; });
-    bypassCount.textContent=bypass;
-    rowCount.textContent=`${recent.length} records`;
-
-    recent.forEach(x=>{
-      const alarm=x.status!=="NORMAL";
-      const tr=document.createElement("tr");
-      if(alarm) tr.className="alarm-row";
-      tr.innerHTML=`
-        <td>${esc(localTime(x.timestamp_utc))}</td>
-        <td>${f(x.upstream_current_A)} A</td>
-        <td>${f(x.main_current_A)} A</td>
-        <td>${f(x.difference_A)} A</td>
-        <td><span class="badge ${alarm?"badge-alarm":"badge-normal"}">${esc(x.status)}</span></td>`;
-      hist.appendChild(tr);
-    });
-
-    drawChart(rows);
+    latestReading = await lr.json();
+    latestHistory = await hr.json();
+    renderData();
 
   }catch(e){
     connectionPill.classList.add("offline");
@@ -520,6 +620,15 @@ async function refresh(){
     heroSub.textContent="The browser could not retrieve the latest cloud data.";
   }
 }
+
+currentViewBtn.addEventListener("click",()=>{
+  viewMode="current";
+  renderData();
+});
+powerViewBtn.addEventListener("click",()=>{
+  viewMode="power";
+  renderData();
+});
 
 refresh();
 setInterval(refresh,2000);
@@ -535,6 +644,12 @@ def using_postgres():
 def pg_connect():
     return psycopg2.connect(DATABASE_URL)
 
+def ensure_sqlite_column(con, name, sql_type):
+    existing = {row[1] for row in con.execute("PRAGMA table_info(readings)").fetchall()}
+    if name not in existing:
+        con.execute(f'ALTER TABLE readings ADD COLUMN "{name}" {sql_type}')
+
+
 def init_db():
     if using_postgres():
         with pg_connect() as con:
@@ -547,10 +662,22 @@ def init_db():
                         upstream_current_A DOUBLE PRECISION NOT NULL,
                         main_current_A DOUBLE PRECISION NOT NULL,
                         difference_A DOUBLE PRECISION NOT NULL,
+                        "upstream_power_W" DOUBLE PRECISION,
+                        "main_power_W" DOUBLE PRECISION,
+                        "power_difference_W" DOUBLE PRECISION,
+                        "voltage_V" DOUBLE PRECISION,
+                        power_factor DOUBLE PRECISION,
                         status TEXT NOT NULL,
                         source TEXT
                     )
                 """)
+                # Existing Render databases already contain the current-only table.
+                # Add the new optional fields without deleting historical readings.
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "upstream_power_W" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "main_power_W" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "power_difference_W" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "voltage_V" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS power_factor DOUBLE PRECISION')
         print("Database ready: PostgreSQL")
     else:
         with sqlite3.connect(SQLITE_PATH) as con:
@@ -562,12 +689,30 @@ def init_db():
                     upstream_current_A REAL NOT NULL,
                     main_current_A REAL NOT NULL,
                     difference_A REAL NOT NULL,
+                    upstream_power_W REAL,
+                    main_power_W REAL,
+                    power_difference_W REAL,
+                    voltage_V REAL,
+                    power_factor REAL,
                     status TEXT NOT NULL,
                     source TEXT
                 )
             """)
+            ensure_sqlite_column(con, "upstream_power_W", "REAL")
+            ensure_sqlite_column(con, "main_power_W", "REAL")
+            ensure_sqlite_column(con, "power_difference_W", "REAL")
+            ensure_sqlite_column(con, "voltage_V", "REAL")
+            ensure_sqlite_column(con, "power_factor", "REAL")
             con.commit()
         print("Database ready: SQLite fallback")
+
+
+def optional_float(data, key):
+    value = data.get(key)
+    if value is None or value == "":
+        return None
+    return float(value)
+
 
 def save_reading(data):
     ts = datetime.now(timezone.utc)
@@ -577,6 +722,11 @@ def save_reading(data):
         float(data["upstream_current_A"]),
         float(data["main_current_A"]),
         float(data["difference_A"]),
+        optional_float(data, "upstream_power_W"),
+        optional_float(data, "main_power_W"),
+        optional_float(data, "power_difference_W"),
+        optional_float(data, "voltage_V"),
+        optional_float(data, "power_factor"),
         str(data["status"]),
         str(data.get("source", "mqtt")),
     )
@@ -586,17 +736,21 @@ def save_reading(data):
             with con.cursor() as cur:
                 cur.execute("""
                     INSERT INTO readings
-                    (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,status,source)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s)
+                    (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
+                     "upstream_power_W","main_power_W","power_difference_W","voltage_V",power_factor,
+                     status,source)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, row)
     else:
         with sqlite3.connect(SQLITE_PATH) as con:
             con.execute("""
                 INSERT INTO readings
-                (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,status,source)
-                VALUES(?,?,?,?,?,?,?)
+                (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
+                 upstream_power_W,main_power_W,power_difference_W,voltage_V,power_factor,status,source)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """, (ts.isoformat(),) + row[1:])
             con.commit()
+
 
 def serialize_row(row):
     if row is None:
@@ -604,13 +758,24 @@ def serialize_row(row):
 
     d = dict(row)
 
-    # PostgreSQL lowercases unquoted column names.
+    # PostgreSQL lowercases unquoted legacy current column names.
     if "upstream_current_a" in d:
         d["upstream_current_A"] = d.pop("upstream_current_a")
     if "main_current_a" in d:
         d["main_current_A"] = d.pop("main_current_a")
     if "difference_a" in d:
         d["difference_A"] = d.pop("difference_a")
+
+    # New power/voltage columns are quoted in PostgreSQL so their API names
+    # remain exactly the same. These fallbacks also tolerate an unquoted DB.
+    if "upstream_power_w" in d:
+        d["upstream_power_W"] = d.pop("upstream_power_w")
+    if "main_power_w" in d:
+        d["main_power_W"] = d.pop("main_power_w")
+    if "power_difference_w" in d:
+        d["power_difference_W"] = d.pop("power_difference_w")
+    if "voltage_v" in d:
+        d["voltage_V"] = d.pop("voltage_v")
 
     ts = d.get("timestamp_utc")
     if hasattr(ts, "isoformat"):
