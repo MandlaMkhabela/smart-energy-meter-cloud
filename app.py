@@ -324,6 +324,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div class="kpi-val"><span id="mismatchPct">--</span><span class="metric-unit">%</span></div>
         </div>
         <div class="kpi">
+          <div class="kpi-top"><span class="kpi-name">Potential unmetered energy</span><span>∫ΔPdt</span></div>
+          <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit"> Wh</span></div>
+          <div class="metric-note">Validated possible-bypass periods in this MCU session</div>
+        </div>
+        <div class="kpi">
           <div class="kpi-top"><span class="kpi-name">Meter ID</span><span>▣</span></div>
           <div class="kpi-val" id="meterId" style="font-size:18px">--</div>
         </div>
@@ -387,6 +392,10 @@ function fPower(v){
   const n=finiteOrNull(v);
   return n === null ? "--" : n.toFixed(1);
 }
+function fEnergy(v){
+  const n=finiteOrNull(v);
+  return n === null ? "--" : n.toFixed(3);
+}
 function pctDiff(u,m){
   const uu=finiteOrNull(u), mm=finiteOrNull(m);
   if(uu === null || mm === null) return null;
@@ -426,7 +435,7 @@ function formatMeasurement(v){
   return viewMode === "power" ? n.toFixed(1) : n.toFixed(3);
 }
 
-function setStatus(status, currentDifference){
+function setStatus(status, currentDifference, bypassEnergyWh){
   const alarm = status !== "NORMAL";
   document.body.classList.toggle("alarm-state", alarm);
   document.body.classList.toggle("normal-state", !alarm);
@@ -445,9 +454,11 @@ function setStatus(status, currentDifference){
 
   const diff=finiteOrNull(currentDifference);
   if(alarm){
+    const e=finiteOrNull(bypassEnergyWh);
+    const energyText = e === null ? "" : ` Potential unmetered energy recorded during validated bypass periods: ${fEnergy(e)} Wh.`;
     heroSub.textContent = diff === null
-      ? "The MCU has reported a possible bypass condition. Immediate investigation is recommended."
-      : `Current mismatch of ${fCurrent(diff)} A has exceeded the prototype threshold. Immediate investigation is recommended.`;
+      ? "The MCU has reported a possible bypass condition. Immediate investigation is recommended." + energyText
+      : `Current mismatch of ${fCurrent(diff)} A has exceeded the prototype threshold. Immediate investigation is recommended.${energyText}`;
   }else{
     heroSub.textContent = "Upstream and main-meter currents are within the expected range.";
   }
@@ -552,8 +563,9 @@ function renderData(){
       : `${mismatch.toFixed(1)}% of upstream reading`;
 
     meterId.textContent=latestReading.meter_id || "--";
+    bypassEnergy.textContent=fEnergy(latestReading.possible_bypass_energy_Wh);
     sourceText.textContent="Source: " + (latestReading.source || "mqtt");
-    setStatus(latestReading.status, latestReading.difference_A);
+    setStatus(latestReading.status, latestReading.difference_A, latestReading.possible_bypass_energy_Wh);
     lastReceivedAt = new Date(latestReading.timestamp_utc).getTime();
   }
 
@@ -667,6 +679,7 @@ def init_db():
                         "power_difference_W" DOUBLE PRECISION,
                         "voltage_V" DOUBLE PRECISION,
                         power_factor DOUBLE PRECISION,
+                        "possible_bypass_energy_Wh" DOUBLE PRECISION,
                         status TEXT NOT NULL,
                         source TEXT
                     )
@@ -678,6 +691,7 @@ def init_db():
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "power_difference_W" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "voltage_V" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS power_factor DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "possible_bypass_energy_Wh" DOUBLE PRECISION')
         print("Database ready: PostgreSQL")
     else:
         with sqlite3.connect(SQLITE_PATH) as con:
@@ -694,6 +708,7 @@ def init_db():
                     power_difference_W REAL,
                     voltage_V REAL,
                     power_factor REAL,
+                    possible_bypass_energy_Wh REAL,
                     status TEXT NOT NULL,
                     source TEXT
                 )
@@ -703,6 +718,7 @@ def init_db():
             ensure_sqlite_column(con, "power_difference_W", "REAL")
             ensure_sqlite_column(con, "voltage_V", "REAL")
             ensure_sqlite_column(con, "power_factor", "REAL")
+            ensure_sqlite_column(con, "possible_bypass_energy_Wh", "REAL")
             con.commit()
         print("Database ready: SQLite fallback")
 
@@ -727,6 +743,7 @@ def save_reading(data):
         optional_float(data, "power_difference_W"),
         optional_float(data, "voltage_V"),
         optional_float(data, "power_factor"),
+        optional_float(data, "possible_bypass_energy_Wh"),
         str(data["status"]),
         str(data.get("source", "mqtt")),
     )
@@ -738,16 +755,16 @@ def save_reading(data):
                     INSERT INTO readings
                     (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
                      "upstream_power_W","main_power_W","power_difference_W","voltage_V",power_factor,
-                     status,source)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     "possible_bypass_energy_Wh",status,source)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, row)
     else:
         with sqlite3.connect(SQLITE_PATH) as con:
             con.execute("""
                 INSERT INTO readings
                 (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
-                 upstream_power_W,main_power_W,power_difference_W,voltage_V,power_factor,status,source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                 upstream_power_W,main_power_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status,source)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (ts.isoformat(),) + row[1:])
             con.commit()
 
@@ -776,6 +793,8 @@ def serialize_row(row):
         d["power_difference_W"] = d.pop("power_difference_w")
     if "voltage_v" in d:
         d["voltage_V"] = d.pop("voltage_v")
+    if "possible_bypass_energy_wh" in d:
+        d["possible_bypass_energy_Wh"] = d.pop("possible_bypass_energy_wh")
 
     ts = d.get("timestamp_utc")
     if hasattr(ts, "isoformat"):

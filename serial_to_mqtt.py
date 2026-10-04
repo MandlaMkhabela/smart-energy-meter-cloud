@@ -4,11 +4,11 @@
 This bridge does NOT decide whether a bypass exists.
 
 The Arduino/MCU sends:
-    upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,status
+    upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status
 
 Example:
-    1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,NORMAL
-    1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,POSSIBLE_BYPASS
+    1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,0.000,NORMAL
+    1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,0.334,POSSIBLE_BYPASS
 
 The Python program only:
     1. reads the MCU packet,
@@ -100,7 +100,7 @@ def main():
 
             parts = [p.strip() for p in raw.split(",")]
 
-            if len(parts) != 9:
+            if len(parts) != 10:
                 print("Ignored serial line:", raw)
                 continue
 
@@ -113,7 +113,8 @@ def main():
                 power_difference = float(parts[5])
                 voltage = float(parts[6])
                 power_factor = float(parts[7])
-                status = parts[8]
+                possible_bypass_energy = float(parts[8])
+                status = parts[9]
 
                 # Validate the MCU status string, but do not calculate it here.
                 if status not in ("NORMAL", "POSSIBLE_BYPASS"):
@@ -130,6 +131,7 @@ def main():
                     "power_difference_W": round(power_difference, 1),
                     "voltage_V": round(voltage, 1),
                     "power_factor": round(power_factor, 3),
+                    "possible_bypass_energy_Wh": round(possible_bypass_energy, 3),
                     "status": status,
                     "source": "arduino_mcu_via_serial",
                 }
