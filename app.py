@@ -326,7 +326,6 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div class="kpi">
           <div class="kpi-top"><span class="kpi-name">Potential unmetered energy</span><span>∫ΔPdt</span></div>
           <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit"> Wh</span></div>
-          <div class="metric-note">Validated possible-bypass periods in this MCU session</div>
         </div>
         <div class="kpi">
           <div class="kpi-top"><span class="kpi-name">Meter ID</span><span>▣</span></div>
@@ -443,7 +442,7 @@ function setStatus(status, currentDifference, bypassEnergyWh){
   heroStatus.textContent = alarm ? "POSSIBLE BYPASS DETECTED" : "SYSTEM NORMAL";
   heroStatus.className = "hero-status " + (alarm ? "alarm-text" : "normal-text");
 
-  statusBadge.textContent = alarm ? "ALARM" : "NORMAL";
+  statusBadge.textContent = alarm ? "POSSIBLE BYPASS" : "NORMAL";
   statusBadge.className = "status-badge " + (alarm ? "status-alarm" : "status-normal");
 
   const heroPanel = document.getElementById("heroPanel");
