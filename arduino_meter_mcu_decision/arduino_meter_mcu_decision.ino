@@ -6,11 +6,11 @@
 
   It sends this CSV over USB Serial every 3 seconds:
 
-      upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,status
+      upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status
 
   Example:
-      1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,NORMAL
-      1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,POSSIBLE_BYPASS
+      1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,0.000,NORMAL
+      1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,0.334,POSSIBLE_BYPASS
 
   IMPORTANT:
   - The Python bridge does not decide NORMAL/POSSIBLE_BYPASS.
@@ -18,6 +18,9 @@
   - The dashboard only displays the status reported by the MCU.
   - Power is included as an additional measurement/view; it does not change
     the current-based prototype bypass decision.
+  - Potential unmetered energy is accumulated only for a bypass condition that
+    passes the same persistence rule. Energy from the first anomalous samples is
+    held temporarily and committed only when POSSIBLE_BYPASS is confirmed.
   - In this Arduino demo, power is simulated from V x I x PF. In the final
     Pico 2 W + ATM90E26 implementation, replace these simulated values with
     the metering IC's measured voltage/current/active-power/PF values.
@@ -48,6 +51,11 @@ float powerFactor = 0.995;
 float upstreamPower = 0.0;
 float mainPower = 0.0;
 float differencePower = 0.0;
+
+// Energy associated only with validated possible-bypass periods.
+// candidateBypassEnergyWh is temporary until ALARM_ON_COUNT is reached.
+float candidateBypassEnergyWh = 0.0;
+float possibleBypassEnergyWh = 0.0;
 
 byte anomalyCount = 0;
 byte clearCount = 0;
@@ -116,23 +124,44 @@ void generateMeasurements() {
 }
 
 
-void updateBypassDecision() {
+void updateBypassDecisionAndEnergy(float elapsedSeconds) {
   bool anomalyNow = (differenceCurrent >= BYPASS_THRESHOLD_A);
+
+  // Wh = W x hours. This is demo-only numerical integration of the
+  // simulated power difference. Final hardware should use metering data
+  // from the ATM90E26 for the energy quantity.
+  float intervalEnergyWh = differencePower * (elapsedSeconds / 3600.0);
 
   if (!bypassAlarmActive) {
     if (anomalyNow) {
+      // Hold energy from the candidate event temporarily. This ensures that
+      // when the third consecutive anomaly confirms the event, energy from
+      // the first two anomalous intervals is not lost.
+      candidateBypassEnergyWh += intervalEnergyWh;
       anomalyCount++;
       clearCount = 0;
 
       if (anomalyCount >= ALARM_ON_COUNT) {
         bypassAlarmActive = true;
+
+        // Commit the entire validated candidate event to the session total.
+        possibleBypassEnergyWh += candidateBypassEnergyWh;
+        candidateBypassEnergyWh = 0.0;
         anomalyCount = 0;
       }
     } else {
+      // A short spike that did not pass the persistence rule is rejected,
+      // including its temporary energy.
       anomalyCount = 0;
+      candidateBypassEnergyWh = 0.0;
     }
   } else {
-    if (!anomalyNow) {
+    if (anomalyNow) {
+      // Once validated, accumulate only while the electrical anomaly is
+      // actually present. Do not continue during the alarm-clear delay.
+      possibleBypassEnergyWh += intervalEnergyWh;
+      clearCount = 0;
+    } else {
       clearCount++;
       anomalyCount = 0;
 
@@ -140,8 +169,6 @@ void updateBypassDecision() {
         bypassAlarmActive = false;
         clearCount = 0;
       }
-    } else {
-      clearCount = 0;
     }
   }
 }
@@ -149,7 +176,7 @@ void updateBypassDecision() {
 
 void sendReading() {
   // Exact CSV expected by serial_to_mqtt.py:
-  // upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,status
+  // upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status
   Serial.print(upstreamCurrent, 3);
   Serial.print(",");
   Serial.print(mainCurrent, 3);
@@ -166,6 +193,8 @@ void sendReading() {
   Serial.print(",");
   Serial.print(powerFactor, 3);
   Serial.print(",");
+  Serial.print(possibleBypassEnergyWh, 3);
+  Serial.print(",");
   Serial.println(bypassAlarmActive ? "POSSIBLE_BYPASS" : "NORMAL");
 }
 
@@ -181,11 +210,14 @@ void setup() {
 
 
 void loop() {
-  if (millis() - lastSample >= SAMPLE_PERIOD_MS) {
-    lastSample = millis();
+  unsigned long now = millis();
+
+  if (now - lastSample >= SAMPLE_PERIOD_MS) {
+    unsigned long elapsedMs = (lastSample == 0) ? SAMPLE_PERIOD_MS : (now - lastSample);
+    lastSample = now;
 
     generateMeasurements();
-    updateBypassDecision();
+    updateBypassDecisionAndEnergy(elapsedMs / 1000.0);
     sendReading();
   }
 }
