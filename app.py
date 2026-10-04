@@ -337,11 +337,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div class="energy-pair">
           <div class="kpi">
             <div class="kpi-top"><span class="kpi-name">Metered energy</span><span class="formula-mark">∫Pdt</span></div>
-            <div class="kpi-val"><span id="meteredEnergy">--</span><span class="metric-unit"> Wh</span></div>
+            <div class="kpi-val"><span id="meteredEnergy">--</span><span class="metric-unit" id="meteredEnergyUnit"> Wh</span></div>
           </div>
           <div class="kpi">
             <div class="kpi-top"><span class="kpi-name">Potential unmetered energy</span><span class="formula-mark">∫ΔPdt</span></div>
-            <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit"> Wh</span></div>
+            <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit" id="bypassEnergyUnit"> Wh</span></div>
           </div>
         </div>
         <div class="kpi">
@@ -408,9 +408,14 @@ function fPower(v){
   const n=finiteOrNull(v);
   return n === null ? "--" : n.toFixed(1);
 }
-function fEnergy(v){
+function energyDisplay(v){
   const n=finiteOrNull(v);
-  return n === null ? "--" : n.toFixed(3);
+  if(n === null) return {value:"--", unit:"Wh"};
+  if(n <= 99.999) return {value:n.toFixed(3), unit:"Wh"};
+  return {value:(n/1000).toFixed(3), unit:"kWh"};
+}
+function fEnergy(v){
+  return energyDisplay(v).value;
 }
 function pctDiff(u,m){
   const uu=finiteOrNull(u), mm=finiteOrNull(m);
@@ -474,7 +479,7 @@ function setStatus(status, currentDifference, bypassEnergyWh){
   const diff=finiteOrNull(currentDifference);
   if(alarm){
     const e=finiteOrNull(bypassEnergyWh);
-    const energyText = e === null ? "" : ` Potential unmetered energy recorded during validated bypass periods: ${fEnergy(e)} Wh.`;
+    const energyText = e === null ? "" : (() => { const x=energyDisplay(e); return ` Potential unmetered energy recorded during validated bypass periods: ${x.value} ${x.unit}.`; })();
     heroSub.textContent = diff === null
       ? "The MCU has reported a possible bypass condition. Immediate investigation is recommended." + energyText
       : `Current mismatch of ${fCurrent(diff)} A has exceeded the prototype threshold. Immediate investigation is recommended.${energyText}`;
@@ -582,8 +587,12 @@ function renderData(){
       : `${mismatch.toFixed(1)}% of upstream reading`;
 
     meterId.textContent=latestReading.meter_id || "--";
-    meteredEnergy.textContent=fEnergy(latestReading.metered_energy_Wh);
-    bypassEnergy.textContent=fEnergy(latestReading.possible_bypass_energy_Wh);
+    const meteredEnergyDisplay=energyDisplay(latestReading.metered_energy_Wh);
+    meteredEnergy.textContent=meteredEnergyDisplay.value;
+    meteredEnergyUnit.textContent=" " + meteredEnergyDisplay.unit;
+    const bypassEnergyDisplay=energyDisplay(latestReading.possible_bypass_energy_Wh);
+    bypassEnergy.textContent=bypassEnergyDisplay.value;
+    bypassEnergyUnit.textContent=" " + bypassEnergyDisplay.unit;
     sourceText.textContent="Source: " + (latestReading.source || "mqtt");
     setStatus(latestReading.status, latestReading.difference_A, latestReading.possible_bypass_energy_Wh);
     lastReceivedAt = new Date(latestReading.timestamp_utc).getTime();
