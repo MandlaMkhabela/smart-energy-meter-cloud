@@ -191,20 +191,7 @@ svg{width:100%;height:100%;overflow:visible}
 }
 .kpi-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .kpi-name{color:var(--muted);font-size:12px}
-.formula-mark{
-  font-family:"Cambria Math","STIX Two Math","Latin Modern Math","Times New Roman",serif;
-  font-style:italic;
-  font-weight:700;
-  font-size:21px;
-  line-height:1;
-  letter-spacing:.025em;
-  background:linear-gradient(135deg,#ffffff 10%,#bfeee5 48%,#f6c96b 100%);
-  -webkit-background-clip:text;
-  background-clip:text;
-  color:transparent;
-  text-shadow:0 0 18px rgba(76,201,176,.14);
-  filter:drop-shadow(0 1px 0 rgba(255,255,255,.08));
-}
+.formula-mark{font-family:"Cambria Math","STIX Two Math","Times New Roman",serif;font-style:italic;font-weight:800;letter-spacing:.05em;font-size:20px;color:#f4f6f8;text-shadow:0 0 14px rgba(255,255,255,.08);}
 .kpi-val{font-size:22px;font-weight:850;margin-top:5px}
 .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
 .chip{font-size:11px;padding:6px 9px;border-radius:999px;background:#24282c;border:1px solid #3a4046;color:#d6d9dc}
