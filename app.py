@@ -185,13 +185,27 @@ body.alarm-state{
 svg{width:100%;height:100%;overflow:visible}
 
 .kpi-stack{display:grid;gap:11px}
+.energy-pair{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .kpi{
   border:1px solid var(--line);border-radius:14px;padding:14px;
   background:rgba(255,255,255,.018)
 }
 .kpi-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .kpi-name{color:var(--muted);font-size:12px}
-.formula-mark{font-family:"Cambria Math","STIX Two Math","Times New Roman",serif;font-style:italic;font-weight:800;letter-spacing:.05em;font-size:20px;color:#f4f6f8;text-shadow:0 0 14px rgba(255,255,255,.08);}
+.formula-mark{
+  font-family:"Cambria Math","STIX Two Math","Latin Modern Math","Times New Roman",serif;
+  font-style:italic;
+  font-weight:700;
+  font-size:21px;
+  line-height:1;
+  letter-spacing:.025em;
+  background:linear-gradient(135deg,#ffffff 10%,#bfeee5 48%,#f6c96b 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  text-shadow:0 0 18px rgba(76,201,176,.14);
+  filter:drop-shadow(0 1px 0 rgba(255,255,255,.08));
+}
 .kpi-val{font-size:22px;font-weight:850;margin-top:5px}
 .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
 .chip{font-size:11px;padding:6px 9px;border-radius:999px;background:#24282c;border:1px solid #3a4046;color:#d6d9dc}
@@ -218,6 +232,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 }
 @media(max-width:580px){
   .shell{padding:14px}
+  .energy-pair{grid-template-columns:1fr}
   .topbar{align-items:flex-start}
   .brand h1{font-size:18px}
   .logo{width:42px;height:42px}
@@ -324,9 +339,15 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div class="kpi-top"><span class="kpi-name">Latest mismatch</span><span id="mismatchSymbol" class="formula-mark">ΔI</span></div>
           <div class="kpi-val"><span id="mismatchPct">--</span><span class="metric-unit">%</span></div>
         </div>
-        <div class="kpi">
-          <div class="kpi-top"><span class="kpi-name">Potential unmetered energy</span><span class="formula-mark">∫ΔPdt</span></div>
-          <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit"> Wh</span></div>
+        <div class="energy-pair">
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Metered energy</span><span class="formula-mark">∫Pdt</span></div>
+            <div class="kpi-val"><span id="meteredEnergy">--</span><span class="metric-unit"> Wh</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Potential unmetered energy</span><span class="formula-mark">∫ΔPdt</span></div>
+            <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit"> Wh</span></div>
+          </div>
         </div>
         <div class="kpi">
           <div class="kpi-top"><span class="kpi-name">Meter ID</span><span>▣</span></div>
@@ -408,6 +429,9 @@ function localTime(ts){
 }
 function esc(s){
   return String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+}
+function humanStatus(status){
+  return String(status ?? "").replaceAll("_", " ");
 }
 
 function measurementFields(row){
@@ -563,6 +587,7 @@ function renderData(){
       : `${mismatch.toFixed(1)}% of upstream reading`;
 
     meterId.textContent=latestReading.meter_id || "--";
+    meteredEnergy.textContent=fEnergy(latestReading.metered_energy_Wh);
     bypassEnergy.textContent=fEnergy(latestReading.possible_bypass_energy_Wh);
     sourceText.textContent="Source: " + (latestReading.source || "mqtt");
     setStatus(latestReading.status, latestReading.difference_A, latestReading.possible_bypass_energy_Wh);
@@ -587,7 +612,7 @@ function renderData(){
       <td>${formatMeasurement(vals.upstream)} ${vals.unit}</td>
       <td>${formatMeasurement(vals.main)} ${vals.unit}</td>
       <td>${formatMeasurement(vals.difference)} ${vals.unit}</td>
-      <td><span class="badge ${alarm?"badge-alarm":"badge-normal"}">${esc(x.status)}</span></td>`;
+      <td><span class="badge ${alarm?"badge-alarm":"badge-normal"}">${esc(humanStatus(x.status))}</span></td>`;
     hist.appendChild(tr);
   });
 
@@ -679,7 +704,9 @@ def init_db():
                         "power_difference_W" DOUBLE PRECISION,
                         "voltage_V" DOUBLE PRECISION,
                         power_factor DOUBLE PRECISION,
+                        "metered_energy_Wh" DOUBLE PRECISION,
                         "possible_bypass_energy_Wh" DOUBLE PRECISION,
+                        reading_id TEXT,
                         status TEXT NOT NULL,
                         source TEXT
                     )
@@ -691,7 +718,10 @@ def init_db():
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "power_difference_W" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "voltage_V" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS power_factor DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "metered_energy_Wh" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "possible_bypass_energy_Wh" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS reading_id TEXT')
+                cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS readings_reading_id_uidx ON readings(reading_id)')
         print("Database ready: PostgreSQL")
     else:
         with sqlite3.connect(SQLITE_PATH) as con:
@@ -708,7 +738,9 @@ def init_db():
                     power_difference_W REAL,
                     voltage_V REAL,
                     power_factor REAL,
+                    metered_energy_Wh REAL,
                     possible_bypass_energy_Wh REAL,
+                    reading_id TEXT,
                     status TEXT NOT NULL,
                     source TEXT
                 )
@@ -718,7 +750,10 @@ def init_db():
             ensure_sqlite_column(con, "power_difference_W", "REAL")
             ensure_sqlite_column(con, "voltage_V", "REAL")
             ensure_sqlite_column(con, "power_factor", "REAL")
+            ensure_sqlite_column(con, "metered_energy_Wh", "REAL")
             ensure_sqlite_column(con, "possible_bypass_energy_Wh", "REAL")
+            ensure_sqlite_column(con, "reading_id", "TEXT")
+            con.execute("CREATE UNIQUE INDEX IF NOT EXISTS readings_reading_id_uidx ON readings(reading_id)")
             con.commit()
         print("Database ready: SQLite fallback")
 
@@ -743,8 +778,10 @@ def save_reading(data):
         optional_float(data, "power_difference_W"),
         optional_float(data, "voltage_V"),
         optional_float(data, "power_factor"),
+        optional_float(data, "metered_energy_Wh"),
         optional_float(data, "possible_bypass_energy_Wh"),
-        str(data["status"]),
+        str(data.get("reading_id") or "") or None,
+        str(data["status"]).replace("_", " "),
         str(data.get("source", "mqtt")),
     )
 
@@ -755,18 +792,22 @@ def save_reading(data):
                     INSERT INTO readings
                     (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
                      "upstream_power_W","main_power_W","power_difference_W","voltage_V",power_factor,
-                     "possible_bypass_energy_Wh",status,source)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     "metered_energy_Wh","possible_bypass_energy_Wh",reading_id,status,source)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (reading_id) DO NOTHING
                 """, row)
+                return cur.rowcount == 1
     else:
         with sqlite3.connect(SQLITE_PATH) as con:
             con.execute("""
-                INSERT INTO readings
+                INSERT OR IGNORE INTO readings
                 (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
-                 upstream_power_W,main_power_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status,source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 upstream_power_W,main_power_W,power_difference_W,voltage_V,power_factor,metered_energy_Wh,possible_bypass_energy_Wh,reading_id,status,source)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (ts.isoformat(),) + row[1:])
+            inserted = con.total_changes > 0
             con.commit()
+            return inserted
 
 
 def serialize_row(row):
@@ -793,8 +834,13 @@ def serialize_row(row):
         d["power_difference_W"] = d.pop("power_difference_w")
     if "voltage_v" in d:
         d["voltage_V"] = d.pop("voltage_v")
+    if "metered_energy_wh" in d:
+        d["metered_energy_Wh"] = d.pop("metered_energy_wh")
     if "possible_bypass_energy_wh" in d:
         d["possible_bypass_energy_Wh"] = d.pop("possible_bypass_energy_wh")
+
+    if "status" in d and d["status"] is not None:
+        d["status"] = str(d["status"]).replace("_", " ")
 
     ts = d.get("timestamp_utc")
     if hasattr(ts, "isoformat"):
@@ -835,8 +881,18 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
 def on_message(client, userdata, msg):
     try:
         data=json.loads(msg.payload.decode("utf-8"))
-        save_reading(data)
-        print("Stored:", data)
+
+        # A legacy retained packet has no stable reading identity. If the broker
+        # replays one when Render reconnects, do not timestamp it as fresh data.
+        if msg.retain and not data.get("reading_id"):
+            print("Legacy retained replay ignored")
+            return
+
+        inserted = save_reading(data)
+        if inserted:
+            print("Stored:", data)
+        else:
+            print("Duplicate ignored:", data.get("reading_id", "no-reading-id"))
     except Exception as e:
         print("Bad MQTT message:", e)
 

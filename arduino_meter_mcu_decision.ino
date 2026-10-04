@@ -6,21 +6,21 @@
 
   It sends this CSV over USB Serial every 3 seconds:
 
-      upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status
+      upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,metered_energy_Wh,possible_bypass_energy_Wh,session_id,sample_id,status
 
   Example:
-      1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,0.000,NORMAL
-      1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,0.334,POSSIBLE_BYPASS
+      1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,0.226,0.000,123456,1,NORMAL
+      1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,3.842,0.334,123456,19,POSSIBLE BYPASS
 
   IMPORTANT:
-  - The Python bridge does not decide NORMAL/POSSIBLE_BYPASS.
+  - The Python bridge does not decide NORMAL/POSSIBLE BYPASS.
   - The MCU applies the prototype current-mismatch threshold and persistence logic.
   - The dashboard only displays the status reported by the MCU.
   - Power is included as an additional measurement/view; it does not change
     the current-based prototype bypass decision.
   - Potential unmetered energy is accumulated only for a bypass condition that
     passes the same persistence rule. Energy from the first anomalous samples is
-    held temporarily and committed only when POSSIBLE_BYPASS is confirmed.
+    held temporarily and committed only when POSSIBLE BYPASS is confirmed.
   - In this Arduino demo, power is simulated from V x I x PF. In the final
     Pico 2 W + ATM90E26 implementation, replace these simulated values with
     the metering IC's measured voltage/current/active-power/PF values.
@@ -52,10 +52,20 @@ float upstreamPower = 0.0;
 float mainPower = 0.0;
 float differencePower = 0.0;
 
+// A normal meter-style cumulative energy register for the main meter path.
+// This demo integrates main active power over time. Final hardware should read
+// accumulated energy from the ATM90E26.
+float meteredEnergyWh = 0.0;
+
 // Energy associated only with validated possible-bypass periods.
 // candidateBypassEnergyWh is temporary until ALARM_ON_COUNT is reached.
 float candidateBypassEnergyWh = 0.0;
 float possibleBypassEnergyWh = 0.0;
+
+// Each reading carries a boot-session ID plus monotonically increasing sample ID.
+// The cloud combines these into a unique reading_id so a retained MQTT packet
+// cannot be inserted again with a fresh timestamp after a reconnect.
+unsigned long sessionId = 0;
 
 byte anomalyCount = 0;
 byte clearCount = 0;
@@ -127,6 +137,10 @@ void generateMeasurements() {
 void updateBypassDecisionAndEnergy(float elapsedSeconds) {
   bool anomalyNow = (differenceCurrent >= BYPASS_THRESHOLD_A);
 
+  // Normal meter energy: continuously integrate the power that the main meter sees.
+  // Wh = W x hours. This is session energy for the Arduino demonstration.
+  meteredEnergyWh += mainPower * (elapsedSeconds / 3600.0);
+
   // Wh = W x hours. This is demo-only numerical integration of the
   // simulated power difference. Final hardware should use metering data
   // from the ATM90E26 for the energy quantity.
@@ -176,7 +190,7 @@ void updateBypassDecisionAndEnergy(float elapsedSeconds) {
 
 void sendReading() {
   // Exact CSV expected by serial_to_mqtt.py:
-  // upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status
+  // upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,metered_energy_Wh,possible_bypass_energy_Wh,session_id,sample_id,status
   Serial.print(upstreamCurrent, 3);
   Serial.print(",");
   Serial.print(mainCurrent, 3);
@@ -193,9 +207,15 @@ void sendReading() {
   Serial.print(",");
   Serial.print(powerFactor, 3);
   Serial.print(",");
+  Serial.print(meteredEnergyWh, 3);
+  Serial.print(",");
   Serial.print(possibleBypassEnergyWh, 3);
   Serial.print(",");
-  Serial.println(bypassAlarmActive ? "POSSIBLE_BYPASS" : "NORMAL");
+  Serial.print(sessionId);
+  Serial.print(",");
+  Serial.print(sampleCount);
+  Serial.print(",");
+  Serial.println(bypassAlarmActive ? "POSSIBLE BYPASS" : "NORMAL");
 }
 
 
@@ -203,7 +223,8 @@ void setup() {
   Serial.begin(115200);
 
   // Floating analogue input gives enough variation for a demo seed.
-  randomSeed(analogRead(A0));
+  randomSeed(analogRead(A0) ^ micros());
+  sessionId = ((unsigned long)random(100000L, 999999L) << 8) ^ micros() ^ analogRead(A0);
 
   delay(1000);
 }

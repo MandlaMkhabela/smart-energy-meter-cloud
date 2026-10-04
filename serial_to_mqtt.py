@@ -4,11 +4,11 @@
 This bridge does NOT decide whether a bypass exists.
 
 The Arduino/MCU sends:
-    upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,possible_bypass_energy_Wh,status
+    upstream_A,main_A,difference_A,upstream_W,main_W,power_difference_W,voltage_V,power_factor,metered_energy_Wh,possible_bypass_energy_Wh,session_id,sample_id,status
 
 Example:
-    1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,0.000,NORMAL
-    1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,0.334,POSSIBLE_BYPASS
+    1.198,1.187,0.011,274.1,271.6,2.5,229.9,0.995,0.226,0.000,123456,1,NORMAL
+    1.207,0.623,0.584,276.4,142.7,133.7,230.1,0.995,3.842,0.334,123456,19,POSSIBLE BYPASS
 
 The Python program only:
     1. reads the MCU packet,
@@ -100,7 +100,7 @@ def main():
 
             parts = [p.strip() for p in raw.split(",")]
 
-            if len(parts) != 10:
+            if len(parts) != 13:
                 print("Ignored serial line:", raw)
                 continue
 
@@ -113,13 +113,26 @@ def main():
                 power_difference = float(parts[5])
                 voltage = float(parts[6])
                 power_factor = float(parts[7])
-                possible_bypass_energy = float(parts[8])
-                status = parts[9]
+                metered_energy = float(parts[8])
+                possible_bypass_energy = float(parts[9])
+                session_id = parts[10]
+                sample_id = parts[11]
+                status = parts[12]
 
                 # Validate the MCU status string, but do not calculate it here.
-                if status not in ("NORMAL", "POSSIBLE_BYPASS"):
+                # Accept the old underscore token during transition, but publish
+                # the human-readable form requested for the dashboard.
+                if status == "POSSIBLE_BYPASS":
+                    status = "POSSIBLE BYPASS"
+                if status not in ("NORMAL", "POSSIBLE BYPASS"):
                     print("Ignored invalid MCU status:", raw)
                     continue
+
+                if not session_id.isdigit() or not sample_id.isdigit():
+                    print("Ignored invalid reading identity:", raw)
+                    continue
+
+                reading_id = f"{session_id}:{sample_id}"
 
                 payload = {
                     "meter_id": "main001",
@@ -131,7 +144,11 @@ def main():
                     "power_difference_W": round(power_difference, 1),
                     "voltage_V": round(voltage, 1),
                     "power_factor": round(power_factor, 3),
+                    "metered_energy_Wh": round(metered_energy, 3),
                     "possible_bypass_energy_Wh": round(possible_bypass_energy, 3),
+                    "reading_id": reading_id,
+                    "session_id": session_id,
+                    "sample_id": int(sample_id),
                     "status": status,
                     "source": "arduino_mcu_via_serial",
                 }
