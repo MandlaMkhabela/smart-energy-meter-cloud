@@ -185,7 +185,7 @@ body.alarm-state{
 svg{width:100%;height:100%;overflow:visible}
 
 .kpi-stack{display:grid;gap:11px}
-.energy-pair{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.energy-pair,.info-pair{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .kpi{
   border:1px solid var(--line);border-radius:14px;padding:14px;
   background:rgba(255,255,255,.018)
@@ -227,7 +227,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 }
 @media(max-width:580px){
   .shell{padding:14px}
-  .energy-pair{grid-template-columns:1fr}
+  .energy-pair,.info-pair{grid-template-columns:1fr}
   .topbar{align-items:flex-start}
   .brand h1{font-size:18px}
   .logo{width:42px;height:42px}
@@ -327,12 +327,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
       <div class="kpi-stack">
         <div class="kpi">
-          <div class="kpi-top"><span class="kpi-name">Possible bypass events</span><span>⚠</span></div>
-          <div class="kpi-val" id="bypassCount">0</div>
-        </div>
-        <div class="kpi">
           <div class="kpi-top"><span class="kpi-name">Latest mismatch</span><span id="mismatchSymbol" class="formula-mark">ΔI</span></div>
           <div class="kpi-val"><span id="mismatchPct">--</span><span class="metric-unit">%</span></div>
+        </div>
+        <div class="info-pair">
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Voltage</span><span>V</span></div>
+            <div class="kpi-val"><span id="voltageValue">--</span><span class="metric-unit"> V</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Power factor</span><span>PF</span></div>
+            <div class="kpi-val"><span id="powerFactorValue">--</span></div>
+          </div>
         </div>
         <div class="energy-pair">
           <div class="kpi">
@@ -342,6 +348,16 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div class="kpi">
             <div class="kpi-top"><span class="kpi-name">Potential unmetered energy</span><span class="formula-mark">∫ΔPdt</span></div>
             <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit" id="bypassEnergyUnit"> Wh</span></div>
+          </div>
+        </div>
+        <div class="info-pair">
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Possible bypass duration</span><span>⏱</span></div>
+            <div class="kpi-val" id="eventDuration">--:--:--</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Event start</span><span>◷</span></div>
+            <div class="kpi-val" id="eventStart" style="font-size:18px">--:--:--</div>
           </div>
         </div>
       </div>
@@ -399,7 +415,13 @@ function finiteOrNull(v){
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-function fCurrent(v){ return num(v).toFixed(3); }
+function currentDisplay(v){
+  const n=finiteOrNull(v);
+  if(n === null) return {value:"--", unit:"A"};
+  if(Math.abs(n) < 1.0) return {value:(n*1000).toFixed(1), unit:"mA"};
+  return {value:n.toFixed(3), unit:"A"};
+}
+function fCurrent(v){ return currentDisplay(v).value; }
 function fPower(v){
   const n=finiteOrNull(v);
   return n === null ? "--" : n.toFixed(1);
@@ -422,6 +444,13 @@ function pctDiff(u,m){
 function localTime(ts){
   const d = new Date(ts);
   return Number.isNaN(d.getTime()) ? "--:--:--" : d.toLocaleTimeString();
+}
+function formatDurationSeconds(seconds){
+  const s=Math.max(0,Math.floor(Number(seconds)||0));
+  const h=Math.floor(s/3600);
+  const m=Math.floor((s%3600)/60);
+  const sec=s%60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
 }
 function esc(s){
   return String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
@@ -566,14 +595,37 @@ function updateViewLabels(){
   histDifferenceHead.textContent = "Difference";
 }
 
+function displayMeasurement(v){
+  if(viewMode === "power"){
+    const n=finiteOrNull(v);
+    return {value:n === null ? "--" : n.toFixed(1), unit:"W"};
+  }
+  return currentDisplay(v);
+}
+
 function renderData(){
   updateViewLabels();
 
   if(latestReading && latestReading.status !== "NO_DATA"){
     const vals=measurementFields(latestReading);
-    u.textContent=formatMeasurement(vals.upstream);
-    m.textContent=formatMeasurement(vals.main);
-    d.textContent=formatMeasurement(vals.difference);
+    if(viewMode === "power"){
+      u.textContent=formatMeasurement(vals.upstream);
+      m.textContent=formatMeasurement(vals.main);
+      d.textContent=formatMeasurement(vals.difference);
+      upstreamUnit.textContent="W";
+      mainUnit.textContent="W";
+      differenceUnit.textContent="W";
+    }else{
+      const upstreamCurrentDisplay=currentDisplay(vals.upstream);
+      const mainCurrentDisplay=currentDisplay(vals.main);
+      const differenceCurrentDisplay=currentDisplay(vals.difference);
+      u.textContent=upstreamCurrentDisplay.value;
+      m.textContent=mainCurrentDisplay.value;
+      d.textContent=differenceCurrentDisplay.value;
+      upstreamUnit.textContent=upstreamCurrentDisplay.unit;
+      mainUnit.textContent=mainCurrentDisplay.unit;
+      differenceUnit.textContent=differenceCurrentDisplay.unit;
+    }
     t.textContent=localTime(latestReading.timestamp_utc);
 
     const mismatch=pctDiff(vals.upstream,vals.main);
@@ -582,12 +634,30 @@ function renderData(){
       ? (viewMode === "power" ? "Power data unavailable" : "Mismatch unavailable")
       : `${mismatch.toFixed(1)}% of upstream reading`;
 
+    const voltage=finiteOrNull(latestReading.voltage_V);
+    voltageValue.textContent=voltage === null ? "--" : voltage.toFixed(1);
+    const pf=finiteOrNull(latestReading.power_factor);
+    powerFactorValue.textContent=pf === null ? "--" : pf.toFixed(3);
+
     const meteredEnergyDisplay=energyDisplay(latestReading.metered_energy_Wh);
     meteredEnergy.textContent=meteredEnergyDisplay.value;
     meteredEnergyUnit.textContent=" " + meteredEnergyDisplay.unit;
     const bypassEnergyDisplay=energyDisplay(latestReading.possible_bypass_energy_Wh);
     bypassEnergy.textContent=bypassEnergyDisplay.value;
     bypassEnergyUnit.textContent=" " + bypassEnergyDisplay.unit;
+
+    if(latestReading.status !== "NORMAL" && latestReading.event_detected_at){
+      eventStart.textContent=localTime(latestReading.event_detected_at);
+      const startMs=new Date(latestReading.event_detected_at).getTime();
+      const endMs=new Date(latestReading.timestamp_utc).getTime();
+      eventDuration.textContent=(Number.isFinite(startMs) && Number.isFinite(endMs))
+        ? formatDurationSeconds((endMs-startMs)/1000)
+        : "--:--:--";
+    }else{
+      eventStart.textContent="--:--:--";
+      eventDuration.textContent="--:--:--";
+    }
+
     sourceText.textContent="Source: " + (latestReading.source || "mqtt");
     setStatus(latestReading.status, latestReading.difference_A, latestReading.possible_bypass_energy_Wh);
     lastReceivedAt = new Date(latestReading.timestamp_utc).getTime();
@@ -595,22 +665,21 @@ function renderData(){
 
   const recent = latestHistory.slice(-20).reverse();
   hist.innerHTML="";
-  let bypass=0;
-
-  latestHistory.forEach(x=>{ if(x.status !== "NORMAL") bypass++; });
-  bypassCount.textContent=bypass;
   rowCount.textContent=`${recent.length} records`;
 
   recent.forEach(x=>{
     const alarm=x.status!=="NORMAL";
     const vals=measurementFields(x);
+    const upDisplay=displayMeasurement(vals.upstream);
+    const mainDisplay=displayMeasurement(vals.main);
+    const diffDisplay=displayMeasurement(vals.difference);
     const tr=document.createElement("tr");
     if(alarm) tr.className="alarm-row";
     tr.innerHTML=`
       <td>${esc(localTime(x.timestamp_utc))}</td>
-      <td>${formatMeasurement(vals.upstream)} ${vals.unit}</td>
-      <td>${formatMeasurement(vals.main)} ${vals.unit}</td>
-      <td>${formatMeasurement(vals.difference)} ${vals.unit}</td>
+      <td>${upDisplay.value} ${upDisplay.unit}</td>
+      <td>${mainDisplay.value} ${mainDisplay.unit}</td>
+      <td>${diffDisplay.value} ${diffDisplay.unit}</td>
       <td><span class="badge ${alarm?"badge-alarm":"badge-normal"}">${esc(humanStatus(x.status))}</span></td>`;
     hist.appendChild(tr);
   });
@@ -872,6 +941,39 @@ def history_rows(limit=100):
         rows=con.execute("SELECT * FROM readings ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
         return [serialize_row(r) for r in reversed(rows)]
 
+def active_event_detected_at():
+    """Return the first cloud timestamp in the currently active non-NORMAL status run."""
+    if using_postgres():
+        with pg_connect() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT status FROM readings ORDER BY id DESC LIMIT 1")
+                latest = cur.fetchone()
+                if not latest or latest[0] == "NORMAL":
+                    return None
+                cur.execute("""
+                    SELECT timestamp_utc
+                    FROM readings
+                    WHERE id > COALESCE((SELECT MAX(id) FROM readings WHERE status = 'NORMAL'), 0)
+                    ORDER BY id ASC
+                    LIMIT 1
+                """)
+                row = cur.fetchone()
+                return row[0].isoformat() if row and hasattr(row[0], "isoformat") else (row[0] if row else None)
+
+    with sqlite3.connect(SQLITE_PATH) as con:
+        latest = con.execute("SELECT status FROM readings ORDER BY id DESC LIMIT 1").fetchone()
+        if not latest or latest[0] == "NORMAL":
+            return None
+        row = con.execute("""
+            SELECT timestamp_utc
+            FROM readings
+            WHERE id > COALESCE((SELECT MAX(id) FROM readings WHERE status = 'NORMAL'), 0)
+            ORDER BY id ASC
+            LIMIT 1
+        """).fetchone()
+        return row[0] if row else None
+
+
 def on_connect(client, userdata, flags, reason_code, properties=None):
     print("MQTT connected:", reason_code)
     client.subscribe(TOPIC)
@@ -924,7 +1026,10 @@ def health():
 @app.get("/api/latest")
 def latest():
     row=latest_row()
-    return jsonify({"status":"NO_DATA"} if row is None else row)
+    if row is None:
+        return jsonify({"status":"NO_DATA"})
+    row["event_detected_at"] = active_event_detected_at()
+    return jsonify(row)
 
 @app.get("/api/history")
 def history():
