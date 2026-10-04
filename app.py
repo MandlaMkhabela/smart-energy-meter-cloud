@@ -206,7 +206,7 @@ svg{width:100%;height:100%;overflow:visible}
   text-shadow:0 0 18px rgba(76,201,176,.14);
   filter:drop-shadow(0 1px 0 rgba(255,255,255,.08));
   display:inline-block;
-  transform:translate(-4px,3px);
+  transform:translate(-8px,6px);
 }
 .kpi-val{font-size:22px;font-weight:850;margin-top:5px}
 .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
