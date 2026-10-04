@@ -344,10 +344,6 @@ tr:hover td{background:rgba(255,255,255,.02)}
             <div class="kpi-val"><span id="bypassEnergy">--</span><span class="metric-unit" id="bypassEnergyUnit"> Wh</span></div>
           </div>
         </div>
-        <div class="kpi">
-          <div class="kpi-top"><span class="kpi-name">Meter ID</span><span>▣</span></div>
-          <div class="kpi-val" id="meterId" style="font-size:18px">--</div>
-        </div>
       </div>
       <div class="chips">
         <span class="chip">MQTT cloud broker</span>
@@ -586,7 +582,6 @@ function renderData(){
       ? (viewMode === "power" ? "Power data unavailable" : "Mismatch unavailable")
       : `${mismatch.toFixed(1)}% of upstream reading`;
 
-    meterId.textContent=latestReading.meter_id || "--";
     const meteredEnergyDisplay=energyDisplay(latestReading.metered_energy_Wh);
     meteredEnergy.textContent=meteredEnergyDisplay.value;
     meteredEnergyUnit.textContent=" " + meteredEnergyDisplay.unit;
