@@ -23,6 +23,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 SQLITE_PATH = Path(__file__).resolve().parent / "meter_readings.db"
 
+# Status strings sent by the Pico firmware.
+STATUS_NORMAL = "NORMAL"
+STATUS_BYPASS = "POSSIBLE BYPASS"
+STATUS_PLC_LOST = "PLC LINK LOST"   # communication fault, NOT theft
+
 app = Flask(__name__)
 
 HTML = r"""
@@ -69,6 +74,13 @@ body.normal-state{
   radial-gradient(circle at 15% 0%,rgba(56,217,150,.08),transparent 30%),
   radial-gradient(circle at 85% 15%,rgba(76,201,176,.05),transparent 28%),
   var(--bg);
+}
+
+body.warn-state{
+  background:
+  radial-gradient(circle at 18% 0%,rgba(246,185,74,.14),transparent 32%),
+  radial-gradient(circle at 85% 10%,rgba(246,185,74,.08),transparent 28%),
+  linear-gradient(180deg,#1a1710 0%, #101214 100%);
 }
 
 body.alarm-state{
@@ -131,6 +143,7 @@ body.alarm-state{
 .eyebrow{font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .hero-status{font-size:34px;font-weight:900;margin-top:7px;letter-spacing:.3px}
 .hero-status.normal-text{color:#88f0b8}
+.hero-status.warn-text{color:#f6c969;text-shadow:0 0 24px rgba(246,185,74,.2)}
 .hero-status.alarm-text{color:#ff7d8c;text-shadow:0 0 24px rgba(255,102,119,.22)}
 .hero-sub{color:var(--muted);margin-top:7px;font-size:14px}
 .status-badge{
@@ -142,6 +155,12 @@ body.alarm-state{
   background:rgba(56,217,150,.18);
   border:1px solid rgba(56,217,150,.35);
   box-shadow:0 0 28px rgba(56,217,150,.10), inset 0 0 22px rgba(56,217,150,.04)
+}
+.status-warn{
+  color:#ffefc9;
+  background:rgba(246,185,74,.18);
+  border:1px solid rgba(246,185,74,.42);
+  box-shadow:0 0 28px rgba(246,185,74,.12), inset 0 0 22px rgba(246,185,74,.04)
 }
 .status-alarm{
   color:#ffe3e7;
@@ -192,6 +211,7 @@ svg{width:100%;height:100%;overflow:visible}
 }
 .kpi-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .kpi-name{color:var(--muted);font-size:12px}
+.kpi-note{font-size:11px;color:var(--muted);margin-top:4px;min-height:14px}
 .formula-mark{
   font-family:"Cambria Math","STIX Two Math","Times New Roman",serif;
   font-style:italic;
@@ -202,6 +222,8 @@ svg{width:100%;height:100%;overflow:visible}
   color:#f4f6f8;
 }
 .kpi-val{font-size:22px;font-weight:850;margin-top:5px}
+.ok-text{color:#88f0b8}
+.lost-text{color:#f6c969}
 .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
 .chip{font-size:11px;padding:6px 9px;border-radius:999px;background:#24282c;border:1px solid #3a4046;color:#d6d9dc}
 
@@ -214,8 +236,10 @@ th{position:sticky;top:0;background:#202326;color:#b4b8bd;font-size:11px;text-tr
 tr:hover td{background:rgba(255,255,255,.02)}
 .badge{display:inline-block;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800}
 .badge-normal{color:#aef6d2;background:rgba(44,227,143,.10);border:1px solid rgba(44,227,143,.22)}
+.badge-warn{color:#ffe3a6;background:rgba(246,185,74,.12);border:1px solid rgba(246,185,74,.28)}
 .badge-alarm{color:#ffd3da;background:rgba(255,93,115,.12);border:1px solid rgba(255,93,115,.25)}
 .alarm-row td{background:rgba(255,93,115,.035)}
+.warn-row td{background:rgba(246,185,74,.03)}
 
 .footer{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:11px;padding:17px 2px 4px}
 .offline .dot{background:var(--red);box-shadow:0 0 14px var(--red)}
@@ -340,6 +364,17 @@ tr:hover td{background:rgba(255,255,255,.02)}
             <div class="kpi-val"><span id="powerFactorValue">--</span></div>
           </div>
         </div>
+        <div class="info-pair">
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">Frequency</span><span>f</span></div>
+            <div class="kpi-val"><span id="frequencyValue">--</span><span class="metric-unit"> Hz</span></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-top"><span class="kpi-name">PLC link</span><span>PLC</span></div>
+            <div class="kpi-val" id="plcLinkValue">--</div>
+            <div class="kpi-note" id="plcNote"></div>
+          </div>
+        </div>
         <div class="energy-pair">
           <div class="kpi">
             <div class="kpi-top"><span class="kpi-name">Metered energy</span><span class="formula-mark">∫Pdt</span></div>
@@ -459,6 +494,14 @@ function humanStatus(status){
   return String(status ?? "").replaceAll("_", " ");
 }
 
+// "normal" | "warn" (PLC link lost, a communication fault) | "alarm" (possible bypass)
+function statusKind(status){
+  const s = humanStatus(status);
+  if(s === "NORMAL") return "normal";
+  if(s === "PLC LINK LOST") return "warn";
+  return "alarm";
+}
+
 function measurementFields(row){
   if(viewMode === "power"){
     return {
@@ -485,21 +528,31 @@ function formatMeasurement(v){
 }
 
 function setStatus(status, currentDifference, bypassEnergyWh){
-  const alarm = status !== "NORMAL";
+  const kind = statusKind(status);
+  const alarm = kind === "alarm";
+  const warn = kind === "warn";
+
   document.body.classList.toggle("alarm-state", alarm);
-  document.body.classList.toggle("normal-state", !alarm);
+  document.body.classList.toggle("warn-state", warn);
+  document.body.classList.toggle("normal-state", kind === "normal");
 
-  heroStatus.textContent = alarm ? "POSSIBLE BYPASS DETECTED" : "SYSTEM NORMAL";
-  heroStatus.className = "hero-status " + (alarm ? "alarm-text" : "normal-text");
+  heroStatus.textContent = alarm ? "POSSIBLE BYPASS DETECTED" : (warn ? "PLC LINK LOST" : "SYSTEM NORMAL");
+  heroStatus.className = "hero-status " + (alarm ? "alarm-text" : (warn ? "warn-text" : "normal-text"));
 
-  statusBadge.textContent = alarm ? "POSSIBLE BYPASS" : "NORMAL";
-  statusBadge.className = "status-badge " + (alarm ? "status-alarm" : "status-normal");
+  statusBadge.textContent = alarm ? "POSSIBLE BYPASS" : (warn ? "PLC LINK LOST" : "NORMAL");
+  statusBadge.className = "status-badge " + (alarm ? "status-alarm" : (warn ? "status-warn" : "status-normal"));
 
   const heroPanel = document.getElementById("heroPanel");
-  heroPanel.style.borderColor = alarm ? "rgba(255,93,115,.45)" : "rgba(56,217,150,.25)";
-  heroPanel.style.boxShadow = alarm
-    ? "0 0 0 1px rgba(255,93,115,.12), 0 18px 55px rgba(0,0,0,.28), 0 0 45px rgba(255,93,115,.14)"
-    : "0 0 0 1px rgba(56,217,150,.08), 0 18px 55px rgba(0,0,0,.28), 0 0 32px rgba(56,217,150,.08)";
+  if(alarm){
+    heroPanel.style.borderColor = "rgba(255,93,115,.45)";
+    heroPanel.style.boxShadow = "0 0 0 1px rgba(255,93,115,.12), 0 18px 55px rgba(0,0,0,.28), 0 0 45px rgba(255,93,115,.14)";
+  }else if(warn){
+    heroPanel.style.borderColor = "rgba(246,185,74,.45)";
+    heroPanel.style.boxShadow = "0 0 0 1px rgba(246,185,74,.12), 0 18px 55px rgba(0,0,0,.28), 0 0 38px rgba(246,185,74,.10)";
+  }else{
+    heroPanel.style.borderColor = "rgba(56,217,150,.25)";
+    heroPanel.style.boxShadow = "0 0 0 1px rgba(56,217,150,.08), 0 18px 55px rgba(0,0,0,.28), 0 0 32px rgba(56,217,150,.08)";
+  }
 
   const diff=finiteOrNull(currentDifference);
   if(alarm){
@@ -508,6 +561,8 @@ function setStatus(status, currentDifference, bypassEnergyWh){
     heroSub.textContent = diff === null
       ? "The MCU has reported a possible bypass condition. Immediate investigation is recommended." + energyText
       : `Current mismatch of ${fCurrent(diff)} A has exceeded the prototype threshold. Immediate investigation is recommended.${energyText}`;
+  }else if(warn){
+    heroSub.textContent = "The customer meter cannot reach the utility meter over the power line. This is a communication fault, not evidence of theft. Bypass detection resumes when the link returns.";
   }else{
     heroSub.textContent = "Upstream and main-meter currents are within the expected range.";
   }
@@ -603,6 +658,27 @@ function displayMeasurement(v){
   return currentDisplay(v);
 }
 
+function renderPlcAndFrequency(reading){
+  const f=finiteOrNull(reading.frequency_Hz);
+  frequencyValue.textContent = f === null ? "--" : f.toFixed(2);
+
+  const plc = reading.plc_ok;
+  if(plc === true || plc === false){
+    plcLinkValue.textContent = plc ? "OK" : "LOST";
+    plcLinkValue.className = "kpi-val " + (plc ? "ok-text" : "lost-text");
+    const age=finiteOrNull(reading.plc_age_ms);
+    if(plc){
+      plcNote.textContent = age === null ? "" : `Last reply ${(age/1000).toFixed(1)} s ago`;
+    }else{
+      plcNote.textContent = "No valid reply from utility meter";
+    }
+  }else{
+    plcLinkValue.textContent = "--";
+    plcLinkValue.className = "kpi-val";
+    plcNote.textContent = "";
+  }
+}
+
 function renderData(){
   updateViewLabels();
 
@@ -639,6 +715,8 @@ function renderData(){
     const pf=finiteOrNull(latestReading.power_factor);
     powerFactorValue.textContent=pf === null ? "--" : pf.toFixed(3);
 
+    renderPlcAndFrequency(latestReading);
+
     const meteredEnergyDisplay=energyDisplay(latestReading.metered_energy_Wh);
     meteredEnergy.textContent=meteredEnergyDisplay.value;
     meteredEnergyUnit.textContent=" " + meteredEnergyDisplay.unit;
@@ -646,7 +724,7 @@ function renderData(){
     bypassEnergy.textContent=bypassEnergyDisplay.value;
     bypassEnergyUnit.textContent=" " + bypassEnergyDisplay.unit;
 
-    if(latestReading.status !== "NORMAL" && latestReading.event_detected_at){
+    if(statusKind(latestReading.status) === "alarm" && latestReading.event_detected_at){
       eventStart.textContent=localTime(latestReading.event_detected_at);
       const startMs=new Date(latestReading.event_detected_at).getTime();
       const endMs=new Date(latestReading.timestamp_utc).getTime();
@@ -668,19 +746,21 @@ function renderData(){
   rowCount.textContent=`${recent.length} records`;
 
   recent.forEach(x=>{
-    const alarm=x.status!=="NORMAL";
+    const kind=statusKind(x.status);
     const vals=measurementFields(x);
     const upDisplay=displayMeasurement(vals.upstream);
     const mainDisplay=displayMeasurement(vals.main);
     const diffDisplay=displayMeasurement(vals.difference);
     const tr=document.createElement("tr");
-    if(alarm) tr.className="alarm-row";
+    if(kind === "alarm") tr.className="alarm-row";
+    else if(kind === "warn") tr.className="warn-row";
+    const badgeClass = kind === "alarm" ? "badge-alarm" : (kind === "warn" ? "badge-warn" : "badge-normal");
     tr.innerHTML=`
       <td>${esc(localTime(x.timestamp_utc))}</td>
       <td>${upDisplay.value} ${upDisplay.unit}</td>
       <td>${mainDisplay.value} ${mainDisplay.unit}</td>
       <td>${diffDisplay.value} ${diffDisplay.unit}</td>
-      <td><span class="badge ${alarm?"badge-alarm":"badge-normal"}">${esc(humanStatus(x.status))}</span></td>`;
+      <td><span class="badge ${badgeClass}">${esc(humanStatus(x.status))}</span></td>`;
     hist.appendChild(tr);
   });
 
@@ -771,23 +851,33 @@ def init_db():
                         "main_power_W" DOUBLE PRECISION,
                         "power_difference_W" DOUBLE PRECISION,
                         "voltage_V" DOUBLE PRECISION,
+                        "frequency_Hz" DOUBLE PRECISION,
                         power_factor DOUBLE PRECISION,
                         "metered_energy_Wh" DOUBLE PRECISION,
                         "possible_bypass_energy_Wh" DOUBLE PRECISION,
+                        plc_ok BOOLEAN,
+                        plc_age_ms DOUBLE PRECISION,
+                        plc_rx_ok DOUBLE PRECISION,
+                        plc_crc_errors DOUBLE PRECISION,
                         reading_id TEXT,
                         status TEXT NOT NULL,
                         source TEXT
                     )
                 """)
-                # Existing Render databases already contain the current-only table.
-                # Add the new optional fields without deleting historical readings.
+                # Existing Render databases already contain the older table.
+                # Add any missing optional fields without deleting history.
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "upstream_power_W" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "main_power_W" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "power_difference_W" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "voltage_V" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "frequency_Hz" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS power_factor DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "metered_energy_Wh" DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS "possible_bypass_energy_Wh" DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS plc_ok BOOLEAN')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS plc_age_ms DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS plc_rx_ok DOUBLE PRECISION')
+                cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS plc_crc_errors DOUBLE PRECISION')
                 cur.execute('ALTER TABLE readings ADD COLUMN IF NOT EXISTS reading_id TEXT')
                 cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS readings_reading_id_uidx ON readings(reading_id)')
         print("Database ready: PostgreSQL")
@@ -805,9 +895,14 @@ def init_db():
                     main_power_W REAL,
                     power_difference_W REAL,
                     voltage_V REAL,
+                    frequency_Hz REAL,
                     power_factor REAL,
                     metered_energy_Wh REAL,
                     possible_bypass_energy_Wh REAL,
+                    plc_ok INTEGER,
+                    plc_age_ms REAL,
+                    plc_rx_ok REAL,
+                    plc_crc_errors REAL,
                     reading_id TEXT,
                     status TEXT NOT NULL,
                     source TEXT
@@ -817,9 +912,14 @@ def init_db():
             ensure_sqlite_column(con, "main_power_W", "REAL")
             ensure_sqlite_column(con, "power_difference_W", "REAL")
             ensure_sqlite_column(con, "voltage_V", "REAL")
+            ensure_sqlite_column(con, "frequency_Hz", "REAL")
             ensure_sqlite_column(con, "power_factor", "REAL")
             ensure_sqlite_column(con, "metered_energy_Wh", "REAL")
             ensure_sqlite_column(con, "possible_bypass_energy_Wh", "REAL")
+            ensure_sqlite_column(con, "plc_ok", "INTEGER")
+            ensure_sqlite_column(con, "plc_age_ms", "REAL")
+            ensure_sqlite_column(con, "plc_rx_ok", "REAL")
+            ensure_sqlite_column(con, "plc_crc_errors", "REAL")
             ensure_sqlite_column(con, "reading_id", "TEXT")
             con.execute("CREATE UNIQUE INDEX IF NOT EXISTS readings_reading_id_uidx ON readings(reading_id)")
             con.commit()
@@ -831,6 +931,17 @@ def optional_float(data, key):
     if value is None or value == "":
         return None
     return float(value)
+
+
+def optional_bool(data, key):
+    value = data.get(key)
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in ("true", "1", "yes", "ok")
 
 
 def save_reading(data):
@@ -845,9 +956,14 @@ def save_reading(data):
         optional_float(data, "main_power_W"),
         optional_float(data, "power_difference_W"),
         optional_float(data, "voltage_V"),
+        optional_float(data, "frequency_Hz"),
         optional_float(data, "power_factor"),
         optional_float(data, "metered_energy_Wh"),
         optional_float(data, "possible_bypass_energy_Wh"),
+        optional_bool(data, "plc_ok"),
+        optional_float(data, "plc_age_ms"),
+        optional_float(data, "plc_rx_ok"),
+        optional_float(data, "plc_crc_errors"),
         str(data.get("reading_id") or "") or None,
         str(data["status"]).replace("_", " "),
         str(data.get("source", "mqtt")),
@@ -859,21 +975,28 @@ def save_reading(data):
                 cur.execute("""
                     INSERT INTO readings
                     (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
-                     "upstream_power_W","main_power_W","power_difference_W","voltage_V",power_factor,
-                     "metered_energy_Wh","possible_bypass_energy_Wh",reading_id,status,source)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     "upstream_power_W","main_power_W","power_difference_W","voltage_V","frequency_Hz",power_factor,
+                     "metered_energy_Wh","possible_bypass_energy_Wh",plc_ok,plc_age_ms,plc_rx_ok,plc_crc_errors,
+                     reading_id,status,source)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (reading_id) DO NOTHING
                 """, row)
                 return cur.rowcount == 1
     else:
+        sqlite_row = (ts.isoformat(),) + row[1:]
+        # SQLite stores booleans as 0/1.
+        sqlite_row = tuple((int(v) if isinstance(v, bool) else v) for v in sqlite_row)
         with sqlite3.connect(SQLITE_PATH) as con:
+            before = con.total_changes
             con.execute("""
                 INSERT OR IGNORE INTO readings
                 (timestamp_utc,meter_id,upstream_current_A,main_current_A,difference_A,
-                 upstream_power_W,main_power_W,power_difference_W,voltage_V,power_factor,metered_energy_Wh,possible_bypass_energy_Wh,reading_id,status,source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (ts.isoformat(),) + row[1:])
-            inserted = con.total_changes > 0
+                 upstream_power_W,main_power_W,power_difference_W,voltage_V,frequency_Hz,power_factor,
+                 metered_energy_Wh,possible_bypass_energy_Wh,plc_ok,plc_age_ms,plc_rx_ok,plc_crc_errors,
+                 reading_id,status,source)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, sqlite_row)
+            inserted = con.total_changes > before
             con.commit()
             return inserted
 
@@ -902,10 +1025,16 @@ def serialize_row(row):
         d["power_difference_W"] = d.pop("power_difference_w")
     if "voltage_v" in d:
         d["voltage_V"] = d.pop("voltage_v")
+    if "frequency_hz" in d:
+        d["frequency_Hz"] = d.pop("frequency_hz")
     if "metered_energy_wh" in d:
         d["metered_energy_Wh"] = d.pop("metered_energy_wh")
     if "possible_bypass_energy_wh" in d:
         d["possible_bypass_energy_Wh"] = d.pop("possible_bypass_energy_wh")
+
+    # SQLite returns 0/1; the API always returns true/false/null.
+    if d.get("plc_ok") is not None:
+        d["plc_ok"] = bool(d["plc_ok"])
 
     if "status" in d and d["status"] is not None:
         d["status"] = str(d["status"]).replace("_", " ")
@@ -942,35 +1071,39 @@ def history_rows(limit=100):
         return [serialize_row(r) for r in reversed(rows)]
 
 def active_event_detected_at():
-    """Return the first cloud timestamp in the currently active non-NORMAL status run."""
+    """Return the first cloud timestamp of the current POSSIBLE BYPASS run.
+
+    Only POSSIBLE BYPASS counts as an event. NORMAL and PLC LINK LOST both end
+    a run, because a lost PLC link is a communication fault, not a bypass.
+    """
     if using_postgres():
         with pg_connect() as con:
             with con.cursor() as cur:
                 cur.execute("SELECT status FROM readings ORDER BY id DESC LIMIT 1")
                 latest = cur.fetchone()
-                if not latest or latest[0] == "NORMAL":
+                if not latest or latest[0] != STATUS_BYPASS:
                     return None
                 cur.execute("""
                     SELECT timestamp_utc
                     FROM readings
-                    WHERE id > COALESCE((SELECT MAX(id) FROM readings WHERE status = 'NORMAL'), 0)
+                    WHERE id > COALESCE((SELECT MAX(id) FROM readings WHERE status <> %s), 0)
                     ORDER BY id ASC
                     LIMIT 1
-                """)
+                """, (STATUS_BYPASS,))
                 row = cur.fetchone()
                 return row[0].isoformat() if row and hasattr(row[0], "isoformat") else (row[0] if row else None)
 
     with sqlite3.connect(SQLITE_PATH) as con:
         latest = con.execute("SELECT status FROM readings ORDER BY id DESC LIMIT 1").fetchone()
-        if not latest or latest[0] == "NORMAL":
+        if not latest or latest[0] != STATUS_BYPASS:
             return None
         row = con.execute("""
             SELECT timestamp_utc
             FROM readings
-            WHERE id > COALESCE((SELECT MAX(id) FROM readings WHERE status = 'NORMAL'), 0)
+            WHERE id > COALESCE((SELECT MAX(id) FROM readings WHERE status <> ?), 0)
             ORDER BY id ASC
             LIMIT 1
-        """).fetchone()
+        """, (STATUS_BYPASS,)).fetchone()
         return row[0] if row else None
 
 
